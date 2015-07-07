@@ -1,0 +1,7 @@
+{
+	"default" : {
+		"BinaryName" : "<<NAME>>",
+		"Workspace" : "./ws/<<NAME>>/",
+		"RunCommand" : "./<<BINARYNAME>>"
+	}
+}
