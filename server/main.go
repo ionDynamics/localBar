@@ -45,7 +45,10 @@ func handleConnection(c net.Conn) {
 	eh(err)
 	blob := &core.Blob{}
 	err = json.Unmarshal([]byte(crypto.Decrypt(*secret, string(binByt))), blob)
-	eh(err)
+	if err != nil {
+		fmt.Fprintln(c, "invalid json. wrong decryption secret?")
+		return
+	}
 
 	configs := make(map[string]core.Config)
 
@@ -85,9 +88,14 @@ func handleConnection(c net.Conn) {
 	}
 	cfg.Assets = replacedAssets
 
-	PrepareWorkspace(cfg, blob)
+	err = PrepareWorkspace(cfg, blob)
+	if err != nil {
+		fmt.Fprintln(c, err)
+		return
+	}
 	go Run(blob.Name, cfg)
 
+	fmt.Fprintln(c, "done")
 }
 
 func eh(err error) {
@@ -96,17 +104,36 @@ func eh(err error) {
 	}
 }
 
-func PrepareWorkspace(cfg core.Config, blob *core.Blob) {
-
+func PrepareWorkspace(cfg core.Config, blob *core.Blob) error {
 	Stop(blob.Name)
 	os.MkdirAll(cfg.Workspace, 0600)
 	binPath := filepath.Clean(cfg.Workspace + string(filepath.Separator) + cfg.BinaryName)
-	fmt.Println(os.Remove(binPath))
+	err := os.Remove(binPath)
+	if err != nil {
+		return err
+	}
+
+	timeout := false
+	go func() {
+		<-time.After(20 * time.Second)
+		timeout = true
+	}()
+
+	for {
+		_, err := os.Stat(binPath)
+		if os.IsNotExist(err) || timeout {
+			break
+		}
+	}
+
+	if timeout {
+		return fmt.Errorf("%s", "couldn't delete old binary")
+	}
 
 	for key, val := range cfg.Assets {
 		ioutil.WriteFile(filepath.Clean(cfg.Workspace+string(filepath.Separator)+key), val, 0600)
 	}
-	ioutil.WriteFile(binPath, blob.Binary, 0600)
+	return ioutil.WriteFile(binPath, blob.Binary, 0600)
 }
 
 var cancelChannels = cmap.New()
@@ -158,20 +185,20 @@ func Run(name string, cfg core.Config) {
 			fmt.Fprintln(file, "\n", err)
 		}
 		err = c.Wait()
-		done <- true
 		if err != nil {
 			fmt.Fprintln(file, "\n", err)
 		}
+		done <- true
 	}(cmd)
 
 	select {
 
 	case <-cancel:
 		err := cmd.Process.Kill()
-		<-done
 		if err != nil {
 			fmt.Println(err)
 		}
+		<-done
 		cancelChannels.Remove(name)
 
 	case <-done:

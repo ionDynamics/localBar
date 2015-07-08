@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -55,5 +56,14 @@ func main() {
 	defer conn.Close()
 
 	fmt.Fprintln(conn, crypto.Encrypt(*secretPtr, string(blobByt)))
-	//fmt.Println(os.Remove(path))
+
+	reader := bufio.NewReader(conn)
+	answer, err := reader.ReadString('\n')
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(answer)
+	}
+
+	fmt.Println(os.Remove(path))
 }
